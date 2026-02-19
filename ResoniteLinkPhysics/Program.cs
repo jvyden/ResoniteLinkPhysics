@@ -55,14 +55,14 @@ public static class Program
         _property = collidableMaterials;
         
         using BufferPool bufferPool = new();
-        using Simulation simulation = Simulation.Create(bufferPool, new NarrowPhaseCallbacks {CollidableMaterials = collidableMaterials}, new PoseIntegratorCallbacks(new Vector3(0, -10, 0)), new SolveDescription(8, 1));
+        using Simulation simulation = Simulation.Create(bufferPool, new NarrowPhaseCallbacks {CollidableMaterials = collidableMaterials}, new PoseIntegratorCallbacks(new Vector3(0, -10, 0), 0.3f, 0.5f), new SolveDescription(8, 1));
         _sim = simulation;
 
         using ThreadDispatcher dispatcher = new(Environment.ProcessorCount);
 
         List<DataModelOperation> initOps = [];
         
-        const int totalBalls = 500;
+        const int totalBalls = 1000;
         for (int i = 0; i < totalBalls; i++)
         {
             const float range = 15f;
@@ -100,7 +100,9 @@ public static class Program
                 simulation.Timestep(elapsed, dispatcher);
                 foreach (Ball ball in _balls)
                 {
-                    ops.Add(ball.UpdatePosition(simulation));
+                    DataModelOperation? op = ball.UpdatePosition(simulation);
+                    if(op != null)
+                        ops.Add(op);
                 }
 
                 await _link.RunDataModelOperationBatch(ops);

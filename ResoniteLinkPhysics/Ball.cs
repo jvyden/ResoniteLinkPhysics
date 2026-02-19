@@ -9,10 +9,24 @@ public class Ball
 {
     public string SlotId;
     public BodyHandle BodyHandle;
+    
+    public Quaternion LastOrientation;
+    public Vector3 LastPosition;
 
-    public DataModelOperation UpdatePosition(Simulation sim)
+    public DataModelOperation? UpdatePosition(Simulation sim)
     {
-        RigidPose pose = sim.Bodies[this.BodyHandle].Pose;
+        BodyReference body = sim.Bodies[this.BodyHandle];
+
+        if (!body.Awake)
+            return null;
+
+        RigidPose pose = body.Pose;
+
+        if (pose.Orientation == LastOrientation && pose.Position == LastPosition)
+            return null;
+
+        this.LastOrientation = pose.Orientation;
+        this.LastPosition = pose.Position;
 
         Slot slot = new()
         {
