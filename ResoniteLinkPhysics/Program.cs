@@ -72,8 +72,7 @@ public static class Program
             initOps.AddRange(AddBall(new Vector3(Rand(-range, range), Rand(maxSize + heightOffset, range + heightOffset), Rand(-range, range)), radius));
         }
 
-        // TODO: search for boxcolliders in the world
-        AddBox(Vector3.Zero, new Vector3(1000, 0, 1000));
+        await DiscoverCollidersAsync();
 
         try
         {
@@ -257,12 +256,75 @@ public static class Program
         });
     }
 
-    private static void AddBox(Vector3 position, Vector3 size)
+    private static void AddBox(Vector3 position, Vector3 size, Quaternion rotation)
     {
         Box box = new(size.X, size.Y, size.Z);
 
         TypedIndex shape = _sim.Shapes.Add(box);
-        StaticDescription desc = new(position, shape);
+        StaticDescription desc = new(new RigidPose(position, rotation), shape);
         _sim.Statics.Add(desc);
+    }
+    
+    private static async Task DiscoverCollidersAsync()
+    {
+        SlotData? data = await _link.GetSlotData(new GetSlot
+        {
+            SlotID = "Root",
+            Depth = 2,
+            IncludeComponentData = true,
+        });
+
+        if (data == null)
+            return;
+
+        await DiscoverCollidersFromSlotAsync(data.Data, Vector3.Zero, Vector3.One, Quaternion.Identity);
+    }
+
+    private static async Task DiscoverCollidersFromSlotAsync(Slot slot, Vector3 position, Vector3 scale, Quaternion rotation)
+    {
+        if (slot.ID != "Root" && !slot.ID.StartsWith("Reso_"))
+            return;
+
+        if (!slot.IsPersistent.Value || !slot.IsActive.Value)
+            return;
+        
+        position *= Unsafe.BitCast<float3, Vector3>(slot.Position.Value);
+        scale *= Unsafe.BitCast<float3, Vector3>(slot.Scale.Value);
+        rotation *= Unsafe.BitCast<floatQ, Quaternion>(slot.Rotation.Value);
+        
+        if (slot.IsReferenceOnly)
+        {
+            SlotData? data = await _link.GetSlotData(new GetSlot
+            {
+                SlotID = slot.ID,
+                Depth = 16,
+                IncludeComponentData = true,
+            });
+
+            if (data == null)
+                return;
+
+            slot = data.Data;
+        }
+
+        if (slot.Components != null)
+        {
+            foreach (Component component in slot.Components)
+            {
+                if(component.ComponentType != "[FrooxEngine]FrooxEngine.BoxCollider")
+                    continue;
+
+                Vector3 size = Unsafe.BitCast<float3, Vector3>(((Field_float3)component.Members["Size"]).Value);
+                AddBox(Unsafe.BitCast<float3, Vector3>(slot.Position.Value), scale * size, rotation);
+            }
+        }
+
+        if (slot.Children != null)
+        {
+            foreach (Slot child in slot.Children)
+            {
+                await DiscoverCollidersFromSlotAsync(child, position, scale, rotation);
+            }
+        }
     }
 }
