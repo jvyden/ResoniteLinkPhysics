@@ -224,8 +224,9 @@ public static class Program
             eventArgs.Cancel = true;
         };
         
-        Console.Write("Port: ");
-        int port = int.Parse(Console.ReadLine()!.TrimEnd());
+        // Console.Write("Port: ");
+        // int port = int.Parse(Console.ReadLine()!.TrimEnd());
+        const int port = 9362;
         
         using LinkInterface link = new();
         await link.Connect(new Uri($"ws://localhost:{port}"), CancellationToken.None);
@@ -253,12 +254,17 @@ public static class Program
             initOps.AddRange(AddBall(new Vector3((i * 2.0f) - (totalBalls / 2.0f), 5.0f, 0.0f)));
         }
 
-        await AddBox(Vector3.Zero, new Vector3(1000, 0, 1000));
+        AddBox(Vector3.Zero, new Vector3(1000, 0, 1000));
 
         try
         {
             Console.WriteLine("Submitting init batch...");
-            await _link.RunDataModelOperationBatch(initOps);
+            BatchResponse? responses = await _link.RunDataModelOperationBatch(initOps);
+            foreach (Response response in responses.Responses)
+            {
+                if (!response.Success)
+                    throw new Exception(response.ErrorInfo);
+            }
 
             Console.WriteLine("Simulation running...");
             while (_running)
@@ -289,7 +295,7 @@ public static class Program
         await _link.RunDataModelOperationBatch(ops);
     }
 
-    public static IEnumerable<DataModelOperation> AddBall(Vector3 position)
+    public static IEnumerable<DataModelOperation> AddBall(Vector3 position, float radius = 1.0f)
     {
         Sphere sphere = new(1);
         BodyInertia inertia = sphere.ComputeInertia(1);
@@ -316,18 +322,68 @@ public static class Program
             }
         };
 
+        string materialId = AllocateId();
+        yield return new AddComponent
+        {
+            ContainerSlotId = id,
+            Data = new Component
+            {
+                ID = materialId,
+                ComponentType = "[FrooxEngine]FrooxEngine.PBS_Metallic",
+            }
+        };
+
+        string meshId = AllocateId();
+        yield return new AddComponent
+        {
+            ContainerSlotId = id,
+            Data = new Component
+            {
+                ID = meshId,
+                ComponentType = "[FrooxEngine]FrooxEngine.SphereMesh",
+                Members = new Dictionary<string, Member>
+                {
+                    {"Radius", new Field_float {Value = radius}}
+                }
+            }
+        };
+        
         yield return new AddComponent
         {
             ContainerSlotId = id,
             Data = new Component
             {
                 ID = AllocateId(),
-                ComponentType = "MeshRenderer"
+                ComponentType = "[FrooxEngine]FrooxEngine.SphereCollider",
+                Members = new Dictionary<string, Member>
+                {
+                    {"Radius", new Field_float {Value = radius}}
+                }
+            }
+        };
+
+        yield return new AddComponent
+        {
+            ContainerSlotId = id,
+            Data = new Component
+            {
+                ID = AllocateId(),
+                ComponentType = "[FrooxEngine]FrooxEngine.MeshRenderer",
+                Members = new Dictionary<string, Member>
+                {
+                    {"Mesh", new Reference {TargetID = meshId}},
+                    {"Materials", new SyncList
+                    {
+                        Elements = [
+                            new Reference { TargetID = materialId }
+                        ]
+                    }}
+                }
             }
         };
     }
 
-    public static async Task AddBox(Vector3 position, Vector3 size)
+    public static void AddBox(Vector3 position, Vector3 size)
     {
         Box box = new(size.X, size.Y, size.Z);
 
