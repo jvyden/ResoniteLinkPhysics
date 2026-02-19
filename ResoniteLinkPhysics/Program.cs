@@ -6,6 +6,7 @@ using BepuPhysics.CollisionDetection;
 using BepuPhysics.Constraints;
 using BepuUtilities;
 using BepuUtilities.Memory;
+using ResoniteLink;
 
 namespace ResoniteLinkPhysics;
 
@@ -203,8 +204,14 @@ public static class Program
 
     private static bool _running = true;
     private static Simulation _sim;
+    private static LinkInterface _link;
     
-    public static void Main(string[] args)
+    // The prefix prevents multiple REPL sessions from colliding with each other's ID's
+    private static string _prefix;
+    private static int _idPool;
+    private static string AllocateId() => $"REPL_{_prefix}_{_idPool++:X}";
+    
+    public static async Task Main(string[] args)
     {
         Console.TreatControlCAsInput = false;
         Console.CancelKeyPress += (_, eventArgs) =>
@@ -213,28 +220,51 @@ public static class Program
             eventArgs.Cancel = true;
         };
         
+        Console.Write("Port: ");
+        int port = int.Parse(Console.ReadLine()!.TrimEnd());
+        
+        using LinkInterface link = new();
+        await link.Connect(new Uri($"ws://localhost:{port}"), CancellationToken.None);
+        _link = link;
+
+        SessionData? session = await link.GetSessionData();
+        if (session == null)
+            throw new Exception("Session not found");
+
+        _prefix = session.UniqueSessionId;
+        
+        Console.WriteLine("Connected!");
+        
         using BufferPool bufferPool = new();
         using Simulation simulation = Simulation.Create(bufferPool, new NarrowPhaseCallbacks(), new PoseIntegratorCallbacks(new Vector3(0, -10, 0)), new SolveDescription(8, 1));
         _sim = simulation;
 
         using ThreadDispatcher dispatcher = new(Environment.ProcessorCount);
 
+        List<DataModelOperation> initOps = [];
+        
         const int totalBalls = 3;
         for (int i = 0; i < totalBalls; i++)
         {
-            AddBall(new Vector3((i * 2.0f) - (totalBalls / 2.0f), 5.0f, 0.0f));
+            initOps.AddRange(AddBall(new Vector3((i * 2.0f) - (totalBalls / 2.0f), 5.0f, 0.0f)));
         }
 
+        await AddBox(Vector3.Zero, new Vector3(1000, 0, 1000));
+        
+        Console.WriteLine("Submitting init batch...");
+        await _link.RunDataModelOperationBatch(initOps);
+
+        Console.WriteLine("Simulation running...");
         while (_running)
         {
             simulation.Timestep(1.0f / 60.0f, dispatcher);
             Thread.Sleep(16);
         }
         
-        Console.WriteLine("Exiting!");
+        Console.WriteLine("Exiting");
     }
 
-    public static void AddBall(Vector3 position)
+    public static IEnumerable<DataModelOperation> AddBall(Vector3 position)
     {
         Sphere sphere = new(1);
         BodyInertia inertia = sphere.ComputeInertia(1);
@@ -242,9 +272,25 @@ public static class Program
         TypedIndex shape = _sim.Shapes.Add(sphere);
         BodyDescription desc = BodyDescription.CreateDynamic(position, inertia, shape, 0.01f);
         _sim.Bodies.Add(desc);
+
+        yield return new AddSlot
+        {
+            Data = new Slot
+            {
+                ID = AllocateId(),
+                Name = new Field_string
+                {
+                    Value = "Ball",
+                },
+                Position = new Field_float3
+                {
+                    Value = Unsafe.BitCast<Vector3, float3>(position),
+                },
+            }
+        };
     }
 
-    public static void AddBox(Vector3 position, Vector3 size)
+    public static async Task AddBox(Vector3 position, Vector3 size)
     {
         Box box = new(size.X, size.Y, size.Z);
 
