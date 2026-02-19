@@ -25,6 +25,7 @@ public static class Program
     private static string AllocateId() => $"{nameof(ResoniteLinkPhysics)}_{_prefix}_{_idPool++:X}";
 
     private static readonly ConcurrentQueue<Ball> _balls = [];
+    private static readonly List<Material> _materials = [];
     
     public static async Task Main()
     {
@@ -62,7 +63,13 @@ public static class Program
 
         List<DataModelOperation> initOps = [];
         
-        const int totalBalls = 1000;
+        const int totalMaterials = 4;
+        for (int i = 0; i < totalMaterials; i++)
+        {
+            initOps.AddRange(AddMaterial(false));
+        }
+        
+        const int totalBalls = 10000;
         for (int i = 0; i < totalBalls; i++)
         {
             const float range = 15f;
@@ -78,13 +85,13 @@ public static class Program
         {
             Console.WriteLine("Submitting init batch...");
 
-            const int batchSize = 250;
+            const int batchSize = 50;
             List<DataModelOperation> batchedOps = new(batchSize);
             int i = 0;
             while (i < initOps.Count)
             {
                 int j = 0;
-                while (j < batchSize)
+                while (j < batchSize && i < initOps.Count)
                 {
                     batchedOps.Add(initOps[i]);
                     i++;
@@ -98,7 +105,6 @@ public static class Program
                         throw new Exception(response.ErrorInfo);
                 }
                 batchedOps.Clear();
-                Thread.Sleep(100);
             }
 
             const float targetTickrate = 60.0f;
@@ -134,9 +140,91 @@ public static class Program
         }
     }
 
+    private static IEnumerable<DataModelOperation> AddMaterial(bool pbs)
+    {
+        string slotId = AllocateId();
+        string materialId = AllocateId();
+        yield return new AddSlot
+        {
+            Data = new Slot
+            {
+                ID = slotId,
+                Name = new Field_string {Value = "Shared Material"}
+            }
+        };
+        
+        Color color = ColorFromHSV(Random.Shared.NextSingle() * 255, 1, 1);
+        if (pbs)
+        {
+            yield return new AddComponent
+            {
+                ContainerSlotId = slotId,
+                Data = new Component
+                {
+                    ID = materialId,
+                    ComponentType = "[FrooxEngine]FrooxEngine.PBS_Metallic",
+                    Members = new Dictionary<string, Member>
+                    {
+                        {"AlbedoColor", new Field_colorX {Value = new colorX
+                            {
+                                r = color.R / 255.0f,
+                                g = color.G / 255.0f,
+                                b = color.B / 255.0f,
+                                a = 1.0f,
+                                Profile = "sRGB",
+                            } }
+                        },
+                        {"Metallic", new Field_float {Value = Random.Shared.NextSingle()}},
+                        {"Smoothness", new Field_float {Value = Random.Shared.NextSingle()}}
+                    }
+                }
+            };
+        }
+        else
+        {
+            yield return new AddComponent
+            {
+                ContainerSlotId = slotId,
+                Data = new Component
+                {
+                    ID = materialId,
+                    ComponentType = "[FrooxEngine]FrooxEngine.UnlitMaterial",
+                    Members = new Dictionary<string, Member>
+                    {
+                        {"TintColor", new Field_colorX {Value = new colorX
+                            {
+                                r = color.R / 255.0f,
+                                g = color.G / 255.0f,
+                                b = color.B / 255.0f,
+                                a = 1.0f,
+                                Profile = "sRGB",
+                            } }
+                        },
+                    }
+                }
+            };
+        }
+        
+        _materials.Add(new Material
+        {
+            SlotId = slotId,
+            MaterialId = materialId,
+        });
+    }
+
     private static async Task RemoveAllSlots()
     {
         List<DataModelOperation> ops = [];
+        
+        foreach (Material material in _materials)
+        {
+            Debug.Assert(material != null);
+            ops.Add(new RemoveSlot
+            {
+                SlotID = material.SlotId
+            });
+        }
+        
         while (_balls.TryDequeue(out Ball? ball))
         {
             Debug.Assert(ball != null);
@@ -185,34 +273,9 @@ public static class Program
             }
         };
 
-        Color color = ColorFromHSV(Random.Shared.NextSingle() * 255, 1, 1);
-
-        // todo: create a shared material so we don't make 594838953268745 drawcalls
-        // no property blocks for albedo color, but we can technically create a SolidColorTexture
-        string materialId = AllocateId();
-        yield return new AddComponent
-        {
-            ContainerSlotId = id,
-            Data = new Component
-            {
-                ID = materialId,
-                ComponentType = "[FrooxEngine]FrooxEngine.PBS_Metallic",
-                Members = new Dictionary<string, Member>
-                {
-                    {"AlbedoColor", new Field_colorX {Value = new colorX
-                        {
-                            r = color.R / 255.0f,
-                            g = color.G / 255.0f,
-                            b = color.B / 255.0f,
-                            a = 1.0f,
-                            Profile = "sRGB",
-                        } }
-                    },
-                    {"Metallic", new Field_float {Value = Random.Shared.NextSingle()}},
-                    {"Smoothness", new Field_float {Value = Random.Shared.NextSingle()}}
-                }
-            }
-        };
+        string? materialId = null;
+        if (_materials.Count > 0)
+            materialId = _materials[Random.Shared.Next(0, _materials.Count)].MaterialId;
 
         string meshId = AllocateId();
         yield return new AddComponent
@@ -224,7 +287,9 @@ public static class Program
                 ComponentType = "[FrooxEngine]FrooxEngine.SphereMesh",
                 Members = new Dictionary<string, Member>
                 {
-                    {"Radius", new Field_float {Value = radius}}
+                    {"Radius", new Field_float {Value = radius}},
+                    {"Segments", new Field_int {Value = 12}},
+                    {"Rings", new Field_int {Value = 6}},
                 }
             }
         };
@@ -240,7 +305,8 @@ public static class Program
                 {
                     {"Radius", new Field_float {Value = radius}},
                     {"Mass", new Field_float {Value = mass}},
-                    {"CharacterCollider", new Field_bool {Value = true}}
+                    {"CharacterCollider", new Field_bool {Value = true}},
+                    {"Type", new Field_Enum {Value = "Active"}}
                 }
             }
         };
