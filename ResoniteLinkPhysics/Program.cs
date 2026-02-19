@@ -77,11 +77,28 @@ public static class Program
         try
         {
             Console.WriteLine("Submitting init batch...");
-            BatchResponse? responses = await _link.RunDataModelOperationBatch(initOps);
-            foreach (Response response in responses.Responses)
+
+            const int batchSize = 250;
+            List<DataModelOperation> batchedOps = new(batchSize);
+            int i = 0;
+            while (i < initOps.Count)
             {
-                if (!response.Success)
-                    throw new Exception(response.ErrorInfo);
+                int j = 0;
+                while (j < batchSize)
+                {
+                    batchedOps.Add(initOps[i]);
+                    i++;
+                    j++;
+                }
+                
+                BatchResponse? responses = await _link.RunDataModelOperationBatch(batchedOps);
+                foreach (Response response in responses.Responses)
+                {
+                    if (!response.Success)
+                        throw new Exception(response.ErrorInfo);
+                }
+                batchedOps.Clear();
+                Thread.Sleep(100);
             }
 
             const float targetTickrate = 60.0f;
