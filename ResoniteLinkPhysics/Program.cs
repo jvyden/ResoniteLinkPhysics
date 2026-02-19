@@ -1,4 +1,6 @@
-﻿using System.Numerics;
+﻿using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using BepuPhysics;
 using BepuPhysics.Collidables;
@@ -210,6 +212,8 @@ public static class Program
     private static string _prefix;
     private static int _idPool;
     private static string AllocateId() => $"REPL_{_prefix}_{_idPool++:X}";
+
+    private static readonly ConcurrentQueue<string> _slots = []; 
     
     public static async Task Main(string[] args)
     {
@@ -250,18 +254,39 @@ public static class Program
         }
 
         await AddBox(Vector3.Zero, new Vector3(1000, 0, 1000));
-        
-        Console.WriteLine("Submitting init batch...");
-        await _link.RunDataModelOperationBatch(initOps);
 
-        Console.WriteLine("Simulation running...");
-        while (_running)
+        try
         {
-            simulation.Timestep(1.0f / 60.0f, dispatcher);
-            Thread.Sleep(16);
+            Console.WriteLine("Submitting init batch...");
+            await _link.RunDataModelOperationBatch(initOps);
+
+            Console.WriteLine("Simulation running...");
+            while (_running)
+            {
+                simulation.Timestep(1.0f / 60.0f, dispatcher);
+                Thread.Sleep(16);
+            }
         }
-        
-        Console.WriteLine("Exiting");
+        finally
+        {
+            Console.WriteLine("Exiting");
+            await RemoveAllSlots();
+        }
+    }
+
+    private static async Task RemoveAllSlots()
+    {
+        List<DataModelOperation> ops = [];
+        while (_slots.TryDequeue(out string? slot))
+        {
+            Debug.Assert(slot != null);
+            ops.Add(new RemoveSlot
+            {
+                SlotID = slot
+            });
+        }
+
+        await _link.RunDataModelOperationBatch(ops);
     }
 
     public static IEnumerable<DataModelOperation> AddBall(Vector3 position)
@@ -273,11 +298,13 @@ public static class Program
         BodyDescription desc = BodyDescription.CreateDynamic(position, inertia, shape, 0.01f);
         _sim.Bodies.Add(desc);
 
+        string id = AllocateId();
+        _slots.Enqueue(id);
         yield return new AddSlot
         {
             Data = new Slot
             {
-                ID = AllocateId(),
+                ID = id,
                 Name = new Field_string
                 {
                     Value = "Ball",
@@ -286,6 +313,16 @@ public static class Program
                 {
                     Value = Unsafe.BitCast<Vector3, float3>(position),
                 },
+            }
+        };
+
+        yield return new AddComponent
+        {
+            ContainerSlotId = id,
+            Data = new Component
+            {
+                ID = AllocateId(),
+                ComponentType = "MeshRenderer"
             }
         };
     }
