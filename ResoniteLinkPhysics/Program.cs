@@ -211,9 +211,9 @@ public static class Program
     // The prefix prevents multiple REPL sessions from colliding with each other's ID's
     private static string _prefix;
     private static int _idPool;
-    private static string AllocateId() => $"REPL_{_prefix}_{_idPool++:X}";
+    private static string AllocateId() => $"{nameof(ResoniteLinkPhysics)}_{_prefix}_{_idPool++:X}";
 
-    private static readonly ConcurrentQueue<string> _slots = []; 
+    private static readonly ConcurrentQueue<Ball> _balls = []; 
     
     public static async Task Main(string[] args)
     {
@@ -251,7 +251,7 @@ public static class Program
         const int totalBalls = 3;
         for (int i = 0; i < totalBalls; i++)
         {
-            initOps.AddRange(AddBall(new Vector3((i * 2.0f) - (totalBalls / 2.0f), 5.0f, 0.0f)));
+            initOps.AddRange(AddBall(new Vector3((i * 2.5f) - (totalBalls / 2.0f), 5.0f, 0.0f)));
         }
 
         AddBox(Vector3.Zero, new Vector3(1000, 0, 1000));
@@ -267,9 +267,18 @@ public static class Program
             }
 
             Console.WriteLine("Simulation running...");
+            List<DataModelOperation> ops = [];
             while (_running)
             {
+                ops.Clear();
                 simulation.Timestep(1.0f / 60.0f, dispatcher);
+                foreach (Ball ball in _balls)
+                {
+                    ops.Add(ball.UpdatePosition(simulation));
+                }
+
+                await _link.RunDataModelOperationBatch(ops);
+                
                 Thread.Sleep(16);
             }
         }
@@ -283,12 +292,12 @@ public static class Program
     private static async Task RemoveAllSlots()
     {
         List<DataModelOperation> ops = [];
-        while (_slots.TryDequeue(out string? slot))
+        while (_balls.TryDequeue(out Ball? ball))
         {
-            Debug.Assert(slot != null);
+            Debug.Assert(ball != null);
             ops.Add(new RemoveSlot
             {
-                SlotID = slot
+                SlotID = ball.SlotId
             });
         }
 
@@ -302,10 +311,9 @@ public static class Program
 
         TypedIndex shape = _sim.Shapes.Add(sphere);
         BodyDescription desc = BodyDescription.CreateDynamic(position, inertia, shape, 0.01f);
-        _sim.Bodies.Add(desc);
+        BodyHandle bodyHandle = _sim.Bodies.Add(desc);
 
         string id = AllocateId();
-        _slots.Enqueue(id);
         yield return new AddSlot
         {
             Data = new Slot
@@ -372,15 +380,24 @@ public static class Program
                 Members = new Dictionary<string, Member>
                 {
                     {"Mesh", new Reference {TargetID = meshId}},
-                    {"Materials", new SyncList
-                    {
-                        Elements = [
-                            new Reference { TargetID = materialId }
-                        ]
-                    }}
+                    {"Materials",
+                        new SyncList
+                        {
+                            Elements =
+                            [
+                                new Reference { TargetID = materialId }
+                            ]
+                        }
+                    }
                 }
             }
         };
+        
+        _balls.Enqueue(new Ball
+        {
+            SlotId = id,
+            BodyHandle = bodyHandle,
+        });
     }
 
     public static void AddBox(Vector3 position, Vector3 size)
