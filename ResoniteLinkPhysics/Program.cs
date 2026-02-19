@@ -25,7 +25,10 @@ public static class Program
     private static string AllocateId() => $"{nameof(ResoniteLinkPhysics)}_{_prefix}_{_idPool++:X}";
 
     private static readonly ConcurrentQueue<Ball> _balls = [];
-    private static readonly List<Material> _materials = [];
+
+    private static ComponentReference _mesh;
+    private static readonly List<ComponentReference> _materials = [];
+    private static readonly List<ComponentReference> _components = [];
     
     public static async Task Main()
     {
@@ -62,6 +65,8 @@ public static class Program
         using ThreadDispatcher dispatcher = new(Environment.ProcessorCount);
 
         List<DataModelOperation> initOps = [];
+        
+        initOps.AddRange(AddMesh());
         
         const int totalMaterials = 4;
         for (int i = 0; i < totalMaterials; i++)
@@ -204,19 +209,61 @@ public static class Program
                 }
             };
         }
-        
-        _materials.Add(new Material
+
+        ComponentReference material = new()
         {
             SlotId = slotId,
-            MaterialId = materialId,
-        });
+            ComponentId = materialId,
+        };
+        
+        _materials.Add(material);
+        _components.Add(material);
+    }
+
+    private static IEnumerable<DataModelOperation> AddMesh()
+    {
+        string slotId = AllocateId();
+        string meshId = AllocateId();
+        yield return new AddSlot
+        {
+            Data = new Slot
+            {
+                ID = slotId,
+                Name = new Field_string {Value = "Shared Mesh"}
+            }
+        };
+        
+        yield return new AddComponent
+        {
+            ContainerSlotId = slotId,
+            Data = new Component
+            {
+                ID = meshId,
+                ComponentType = "[FrooxEngine]FrooxEngine.SphereMesh",
+                Members = new Dictionary<string, Member>
+                {
+                    {"Radius", new Field_float {Value = 1.0f}},
+                    {"Segments", new Field_int {Value = 12}},
+                    {"Rings", new Field_int {Value = 6}},
+                }
+            }
+        };
+
+        ComponentReference mesh = new()
+        {
+            SlotId = slotId,
+            ComponentId = meshId,
+        };
+
+        _mesh = mesh;
+        _components.Add(mesh);
     }
 
     private static async Task RemoveAllSlots()
     {
         List<DataModelOperation> ops = [];
         
-        foreach (Material material in _materials)
+        foreach (ComponentReference material in _components)
         {
             Debug.Assert(material != null);
             ops.Add(new RemoveSlot
@@ -270,29 +317,23 @@ public static class Program
                 {
                     Value = Unsafe.BitCast<Vector3, float3>(position),
                 },
+                Scale = new Field_float3
+                {
+                    Value = new float3
+                    {
+                        x = radius,
+                        y = radius,
+                        z = radius
+                    },
+                }
             }
         };
 
         string? materialId = null;
         if (_materials.Count > 0)
-            materialId = _materials[Random.Shared.Next(0, _materials.Count)].MaterialId;
+            materialId = _materials[Random.Shared.Next(0, _materials.Count)].ComponentId;
 
-        string meshId = AllocateId();
-        yield return new AddComponent
-        {
-            ContainerSlotId = id,
-            Data = new Component
-            {
-                ID = meshId,
-                ComponentType = "[FrooxEngine]FrooxEngine.SphereMesh",
-                Members = new Dictionary<string, Member>
-                {
-                    {"Radius", new Field_float {Value = radius}},
-                    {"Segments", new Field_int {Value = 12}},
-                    {"Rings", new Field_int {Value = 6}},
-                }
-            }
-        };
+        string meshId = _mesh.ComponentId;
         
         yield return new AddComponent
         {
@@ -303,7 +344,7 @@ public static class Program
                 ComponentType = "[FrooxEngine]FrooxEngine.SphereCollider",
                 Members = new Dictionary<string, Member>
                 {
-                    {"Radius", new Field_float {Value = radius}},
+                    {"Radius", new Field_float {Value = 1.0f}},
                     {"Mass", new Field_float {Value = mass}},
                     {"CharacterCollider", new Field_bool {Value = true}},
                     {"Type", new Field_Enum {Value = "Active"}}
