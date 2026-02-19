@@ -61,10 +61,11 @@ public static class Program
         const int totalBalls = 500;
         for (int i = 0; i < totalBalls; i++)
         {
-            const float range = 10f;
-            const float height = 0.75f;
-            float radius = Rand(0.1f, height);
-            initOps.AddRange(AddBall(new Vector3(Rand(-range, range), Rand(height, range), Rand(-range, range)), radius));
+            const float range = 5f;
+            const float maxSize = 0.75f;
+            const float heightOffset = 30f;
+            float radius = Rand(0.1f, maxSize);
+            initOps.AddRange(AddBall(new Vector3(Rand(-range, range), Rand(maxSize + heightOffset, range + heightOffset), Rand(-range, range)), radius));
         }
 
         // TODO: search for boxcolliders in the world
