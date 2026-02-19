@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Drawing;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using BepuPhysics;
@@ -8,6 +9,7 @@ using BepuPhysics.Constraints;
 using BepuUtilities;
 using BepuUtilities.Memory;
 using ResoniteLink;
+using static ResoniteLinkPhysics.Util;
 
 namespace ResoniteLinkPhysics;
 public static class Program
@@ -22,11 +24,6 @@ public static class Program
     private static string AllocateId() => $"{nameof(ResoniteLinkPhysics)}_{_prefix}_{_idPool++:X}";
 
     private static readonly ConcurrentQueue<Ball> _balls = [];
-
-    private static float Rand(float min, float max)
-    {
-        return (Random.Shared.NextSingle() * (max - min)) + min;
-    }
     
     public static async Task Main()
     {
@@ -89,10 +86,16 @@ public static class Program
             
             Console.WriteLine("Simulation running...");
             List<DataModelOperation> ops = [];
+
+            Stopwatch sw = Stopwatch.StartNew();
+            long lastTick = sw.ElapsedMilliseconds;
             while (_running)
             {
+                long now = sw.ElapsedMilliseconds;
+                float elapsed = Math.Max(0.01f, (now - lastTick) / 1000f);
+                lastTick = now;
                 ops.Clear();
-                simulation.Timestep(1.0f / tickrate, dispatcher);
+                simulation.Timestep(elapsed, dispatcher);
                 foreach (Ball ball in _balls)
                 {
                     ops.Add(ball.UpdatePosition(simulation));
@@ -100,7 +103,7 @@ public static class Program
 
                 await _link.RunDataModelOperationBatch(ops);
                 
-                Thread.Sleep((int)(1000.0f / tickrate));
+                Thread.Sleep((int)((1000.0f / tickrate) - elapsed));
             }
         }
         finally
@@ -152,6 +155,8 @@ public static class Program
             }
         };
 
+        Color color = ColorFromHSV(Random.Shared.NextSingle() * 255, 1, 1);
+
         string materialId = AllocateId();
         yield return new AddComponent
         {
@@ -160,6 +165,18 @@ public static class Program
             {
                 ID = materialId,
                 ComponentType = "[FrooxEngine]FrooxEngine.PBS_Metallic",
+                Members = new Dictionary<string, Member>
+                {
+                    {"AlbedoColor", new Field_colorX {Value = new colorX
+                        {
+                            r = color.R / 255.0f,
+                            g = color.G / 255.0f,
+                            b = color.B / 255.0f,
+                            a = 1.0f,
+                            Profile = "sRGB",
+                        } }
+                    }
+                }
             }
         };
 
