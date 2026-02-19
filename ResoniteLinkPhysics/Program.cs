@@ -61,16 +61,14 @@ public static class Program
         const int totalBalls = 500;
         for (int i = 0; i < totalBalls; i++)
         {
-            // float radius = (i + 1) / (float)totalBalls;
-            // initOps.AddRange(AddBall(new Vector3((i * radius * 1.5f), 5.0f, 0.0f), radius));
             const float range = 10f;
             const float height = 0.75f;
             float radius = Rand(0.1f, height);
             initOps.AddRange(AddBall(new Vector3(Rand(-range, range), Rand(height, range), Rand(-range, range)), radius));
         }
 
+        // TODO: search for boxcolliders in the world
         AddBox(Vector3.Zero, new Vector3(1000, 0, 1000));
-        // AddBox(new Vector3(3.7f, 2.5f, 0.1f), new Vector3(0.25f, 0.25f, 0.25f));
 
         try
         {
@@ -82,7 +80,7 @@ public static class Program
                     throw new Exception(response.ErrorInfo);
             }
 
-            const float tickrate = 60.0f;
+            const float targetTickrate = 60.0f;
             
             Console.WriteLine("Simulation running...");
             List<DataModelOperation> ops = [];
@@ -103,7 +101,7 @@ public static class Program
 
                 await _link.RunDataModelOperationBatch(ops);
                 
-                Thread.Sleep((int)((1000.0f / tickrate) - elapsed));
+                Thread.Sleep((int)((1000.0f / targetTickrate) - elapsed));
             }
         }
         finally
@@ -131,7 +129,7 @@ public static class Program
     public static IEnumerable<DataModelOperation> AddBall(Vector3 position, float radius = 1.0f)
     {
         Sphere sphere = new(radius);
-        float mass = radius * .5f;
+        float mass = radius * 0.5f;
         BodyInertia inertia = sphere.ComputeInertia(mass);
 
         TypedIndex shape = _sim.Shapes.Add(sphere);
@@ -157,6 +155,8 @@ public static class Program
 
         Color color = ColorFromHSV(Random.Shared.NextSingle() * 255, 1, 1);
 
+        // todo: create a shared material so we don't make 594838953268745 drawcalls
+        // no property blocks for albedo color, but we can technically create a SolidColorTexture
         string materialId = AllocateId();
         yield return new AddComponent
         {
@@ -175,7 +175,9 @@ public static class Program
                             a = 1.0f,
                             Profile = "sRGB",
                         } }
-                    }
+                    },
+                    {"Metallic", new Field_float {Value = Random.Shared.NextSingle()}},
+                    {"Smoothness", new Field_float {Value = Random.Shared.NextSingle()}}
                 }
             }
         };
@@ -241,7 +243,7 @@ public static class Program
         });
     }
 
-    public static void AddBox(Vector3 position, Vector3 size)
+    private static void AddBox(Vector3 position, Vector3 size)
     {
         Box box = new(size.X, size.Y, size.Z);
 
