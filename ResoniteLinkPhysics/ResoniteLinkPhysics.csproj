@@ -7,4 +7,9 @@
         <Nullable>enable</Nullable>
     </PropertyGroup>
 
+    <ItemGroup>
+      <PackageReference Include="BepuPhysics" Version="2.4.0" />
+      <PackageReference Include="YellowDogMan.ResoniteLink" Version="0.8.3" />
+    </ItemGroup>
+
 </Project>
