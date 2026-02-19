@@ -15,6 +15,7 @@ namespace ResoniteLinkPhysics;
 public static class Program
 {
     private static bool _running = true;
+    private static CollidableProperty<SimpleMaterial> _property;
     private static Simulation _sim;
     private static LinkInterface _link;
     
@@ -36,7 +37,7 @@ public static class Program
         
         // Console.Write("Port: ");
         // int port = int.Parse(Console.ReadLine()!.TrimEnd());
-        const int port = 9362;
+        const int port = 23608;
         
         using LinkInterface link = new();
         await link.Connect(new Uri($"ws://localhost:{port}"), CancellationToken.None);
@@ -50,8 +51,11 @@ public static class Program
         
         Console.WriteLine("Connected!");
         
+        using CollidableProperty<SimpleMaterial> collidableMaterials = new();
+        _property = collidableMaterials;
+        
         using BufferPool bufferPool = new();
-        using Simulation simulation = Simulation.Create(bufferPool, new NarrowPhaseCallbacks(new SpringSettings(30, 1)), new PoseIntegratorCallbacks(new Vector3(0, -10, 0)), new SolveDescription(8, 1));
+        using Simulation simulation = Simulation.Create(bufferPool, new NarrowPhaseCallbacks {CollidableMaterials = collidableMaterials}, new PoseIntegratorCallbacks(new Vector3(0, -10, 0)), new SolveDescription(8, 1));
         _sim = simulation;
 
         using ThreadDispatcher dispatcher = new(Environment.ProcessorCount);
@@ -61,10 +65,10 @@ public static class Program
         const int totalBalls = 500;
         for (int i = 0; i < totalBalls; i++)
         {
-            const float range = 5f;
-            const float maxSize = 0.75f;
+            const float range = 15f;
+            const float maxSize = 0.6f;
             const float heightOffset = 30f;
-            float radius = Rand(0.1f, maxSize);
+            float radius = Rand(0.3f, maxSize);
             initOps.AddRange(AddBall(new Vector3(Rand(-range, range), Rand(maxSize + heightOffset, range + heightOffset), Rand(-range, range)), radius));
         }
 
@@ -136,6 +140,15 @@ public static class Program
         TypedIndex shape = _sim.Shapes.Add(sphere);
         BodyDescription desc = BodyDescription.CreateDynamic(position, inertia, shape, new BodyActivityDescription(0.01f));
         BodyHandle bodyHandle = _sim.Bodies.Add(desc);
+
+        const int randRange = 200;
+        float rand = Random.Shared.Next(0, randRange);
+        _property.Allocate(bodyHandle) = new SimpleMaterial
+        {
+            FrictionCoefficient = 1,
+            MaximumRecoveryVelocity = float.MaxValue,
+            SpringSettings = new SpringSettings(5 + 0.25f * Random.Shared.Next(0, randRange), rand * rand / 10000f), 
+        };
 
         string id = AllocateId();
         yield return new AddSlot
