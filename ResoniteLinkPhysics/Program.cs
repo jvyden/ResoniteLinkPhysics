@@ -21,7 +21,12 @@ public static class Program
     private static int _idPool;
     private static string AllocateId() => $"{nameof(ResoniteLinkPhysics)}_{_prefix}_{_idPool++:X}";
 
-    private static readonly ConcurrentQueue<Ball> _balls = []; 
+    private static readonly ConcurrentQueue<Ball> _balls = [];
+
+    private static float Rand(float min, float max)
+    {
+        return (Random.Shared.NextSingle() * (max - min)) + min;
+    }
     
     public static async Task Main()
     {
@@ -56,13 +61,19 @@ public static class Program
 
         List<DataModelOperation> initOps = [];
         
-        const int totalBalls = 3;
+        const int totalBalls = 500;
         for (int i = 0; i < totalBalls; i++)
         {
-            initOps.AddRange(AddBall(new Vector3((i * 2.5f) - (totalBalls / 2.0f), 5.0f, 0.0f), (i + 1) / (float)totalBalls));
+            // float radius = (i + 1) / (float)totalBalls;
+            // initOps.AddRange(AddBall(new Vector3((i * radius * 1.5f), 5.0f, 0.0f), radius));
+            const float range = 10f;
+            const float height = 0.75f;
+            float radius = Rand(0.1f, height);
+            initOps.AddRange(AddBall(new Vector3(Rand(-range, range), Rand(height, range), Rand(-range, range)), radius));
         }
 
         AddBox(Vector3.Zero, new Vector3(1000, 0, 1000));
+        // AddBox(new Vector3(3.7f, 2.5f, 0.1f), new Vector3(0.25f, 0.25f, 0.25f));
 
         try
         {
@@ -117,7 +128,8 @@ public static class Program
     public static IEnumerable<DataModelOperation> AddBall(Vector3 position, float radius = 1.0f)
     {
         Sphere sphere = new(radius);
-        BodyInertia inertia = sphere.ComputeInertia(1f);
+        float mass = radius * .5f;
+        BodyInertia inertia = sphere.ComputeInertia(mass);
 
         TypedIndex shape = _sim.Shapes.Add(sphere);
         BodyDescription desc = BodyDescription.CreateDynamic(position, inertia, shape, new BodyActivityDescription(0.01f));
@@ -176,6 +188,7 @@ public static class Program
                 Members = new Dictionary<string, Member>
                 {
                     {"Radius", new Field_float {Value = radius}},
+                    {"Mass", new Field_float {Value = mass}},
                     {"CharacterCollider", new Field_bool {Value = true}}
                 }
             }
