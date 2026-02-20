@@ -121,6 +121,20 @@ public static class Program
             long lastTick = sw.ElapsedMilliseconds;
             while (_running)
             {
+                while (Console.KeyAvailable)
+                {
+                    ConsoleKeyInfo key = Console.ReadKey();
+                    switch (key.KeyChar)
+                    {
+                        case 'j':
+                            Jump(1.5f);
+                            break;
+                        case 'J':
+                            Jump(1.5f * 5f);
+                            break;
+                    }
+                }
+                
                 long now = sw.ElapsedMilliseconds;
                 float elapsed = Math.Max(0.01f, (now - lastTick) / 1000f);
                 lastTick = now;
@@ -135,13 +149,21 @@ public static class Program
 
                 await _link.RunDataModelOperationBatch(ops);
                 
-                Thread.Sleep((int)((1000.0f / targetTickrate) - elapsed));
+                Thread.Sleep((int)((1000.0f / targetTickrate)));
             }
         }
         finally
         {
             Console.WriteLine("Exiting");
             await RemoveAllSlots();
+        }
+    }
+
+    private static void Jump(float strength)
+    {
+        foreach (Ball ball in _balls)
+        {
+            ball.Jump(_sim, strength);
         }
     }
 
@@ -158,7 +180,7 @@ public static class Program
             }
         };
         
-        Color color = ColorFromHSV(Random.Shared.NextSingle() * 255, 1, 1);
+        Color color = ColorFromHSV(Random.Shared.NextSingle() * 255, 0.8f, 0.9f);
         if (pbs)
         {
             yield return new AddComponent
@@ -347,7 +369,7 @@ public static class Program
                     {"Radius", new Field_float {Value = 1.0f}},
                     {"Mass", new Field_float {Value = mass}},
                     {"CharacterCollider", new Field_bool {Value = true}},
-                    {"Type", new Field_Enum {Value = "Active"}}
+                    {"Type", new Field_Enum {Value = "Static"}}
                 }
             }
         };

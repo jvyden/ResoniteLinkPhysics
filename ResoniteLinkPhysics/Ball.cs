@@ -40,4 +40,16 @@ public class Ball
             Data = slot,
         };
     }
+
+    public void Jump(Simulation sim, float strength)
+    {
+        BodyReference body = sim.Bodies[this.BodyHandle];
+        Vector3 impulse = new()
+        {
+            X = Util.Rand(-strength, strength),
+            Y = Util.Rand(-strength, strength),
+            Z = Util.Rand(-strength, strength),
+        };
+        body.ApplyLinearImpulse(impulse);
+    }
 }
